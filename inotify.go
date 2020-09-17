@@ -122,6 +122,37 @@ func (w *Watcher) Add(name string) error {
 	return nil
 }
 
+// Add starts watching the named file or directory (non-recursively).
+func (w *Watcher) AddCustom(name string, agnosticEvents uint32) error {
+	name = filepath.Clean(name)
+	if w.isClosed() {
+		return errors.New("inotify instance already closed")
+	}
+
+	var flags uint32 = agnosticEvents
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	watchEntry := w.watches[name]
+	if watchEntry != nil {
+		flags |= watchEntry.flags | unix.IN_MASK_ADD
+	}
+	wd, errno := unix.InotifyAddWatch(w.fd, name, flags)
+	if wd == -1 {
+		return errno
+	}
+
+	if watchEntry == nil {
+		w.watches[name] = &watch{wd: uint32(wd), flags: flags}
+		w.paths[wd] = name
+	} else {
+		watchEntry.wd = uint32(wd)
+		watchEntry.flags = flags
+	}
+
+	return nil
+}
+
 // Remove stops watching the named file or directory (non-recursively).
 func (w *Watcher) Remove(name string) error {
 	name = filepath.Clean(name)
